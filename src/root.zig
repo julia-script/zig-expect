@@ -1,6 +1,7 @@
 const std = @import("std");
 const builtin = @import("builtin");
 const io = std.io;
+const PatianceDiff = @import("PatianceDiff.zig");
 
 inline fn getContext() std.debug.ThreadContext {
     var context: std.debug.ThreadContext = undefined;
@@ -90,15 +91,6 @@ fn Matchers(comptime T: type) type {
                     return err;
                 };
             } else {
-                // expectType(T, actual, false) catch |err| {
-                //     try stderr.writeAll("...\n");
-                //     try stderr.writeAll("\nExpected: ");
-                //     try tty_config.setColor(stderr, .red);
-                //     try stderr.print("{any}\n", .{self.expected});
-                //     try tty_config.setColor(stderr, .reset);
-                //     return err;
-                // };
-
                 testing.expect(self.expected == actual) catch |err| {
                     try stderr.writeAll("...\n");
                     try stderr.writeAll("\nExpected: ");
@@ -113,19 +105,29 @@ fn Matchers(comptime T: type) type {
                 };
             }
         }
-        // // pub fn toBe(self: Self, actual: T) !void {
-        // //     try std.testing.expect(self.expected != actual);
-        // // }
+        pub fn toBeEqualString(self: Self, actual: T) !void {
+            const testing_allocator = std.testing.allocator;
+            const is_equal = std.mem.eql(u8, self.expected, actual);
 
-        // pub fn toEqual(self: Self, actual: T) !void {
-        //     try std.testing.expectEqual(self.expected, actual);
-        // }
-        // pub fn toNotEqual(self: Self, actual: T) !void {
-        //     try std.testing.expect(self.expected != actual);
-        // }
-        // pub fn toNotBeNull(self: Self) !void {
-        //     try std.testing.expect(self.expected != null);
-        // }
+            if (self.is_not) {
+                std.testing.expect(!is_equal) catch |err| {
+                    return err;
+                };
+            } else {
+                std.testing.expect(is_equal) catch |err| {
+                    var res = try PatianceDiff.diff(
+                        testing_allocator,
+                        self.expected,
+                        actual,
+                    );
+                    defer res.deinit();
+                    try stderr.writeAll("...\n\n");
+                    try res.format(stderr, .{});
+                    try stderr.writeAll("\n\n");
+                    return err;
+                };
+            }
+        }
         pub fn toBeNull(self: Self) !void {
             try std.testing.expect(self.expected == null);
         }
@@ -142,5 +144,6 @@ pub inline fn expect(expected: anytype) Matchers(@TypeOf(expected)) {
 }
 
 test "basic add functionality" {
-    try expect(2).not.toBe(2);
+    // try expect(2).not.toBe(2);
+    try expect("Hello, World!").not.toBeEqualString("Hello, world!");
 }
