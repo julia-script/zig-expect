@@ -105,8 +105,35 @@ fn Matchers(comptime T: type) type {
                 };
             }
         }
+        fn isOptional(Type: type) bool {
+            return switch (@typeInfo(Type)) {
+                .optional => true,
+                else => false,
+            };
+        }
+        fn UnwrapType(Type: type) type {
+            return switch (@typeInfo(Type)) {
+                .optional => |info| info.child,
+                else => Type,
+            };
+        }
+        fn unwrap(value: anytype) !UnwrapType(@TypeOf(value)) {
+            if (isOptional(@TypeOf(value))) {
+                try std.testing.expect(value != null);
+                return value.?;
+            }
+            return value;
+            // return switch (@typeInfo(@TypeOf(value))) {
+            //     .optional => {
+            //         try std.testing.expect(value != null);
+            //         return value.?;
+            //     },
+            //     else => value,
+            // };
+        }
         pub fn toBeEqualString(self: Self, actual: T) !void {
             const testing_allocator = std.testing.allocator;
+
             const is_equal = std.mem.eql(u8, self.expected, actual);
 
             if (self.is_not) {
@@ -136,6 +163,7 @@ fn Matchers(comptime T: type) type {
 pub inline fn expect(expected: anytype) Matchers(@TypeOf(expected)) {
     return .{
         .expected = expected,
+        .is_not = false,
         .not = &.{
             .expected = expected,
             .is_not = true,
@@ -144,6 +172,6 @@ pub inline fn expect(expected: anytype) Matchers(@TypeOf(expected)) {
 }
 
 test "basic add functionality" {
-    // try expect(2).not.toBe(2);
+    try expect(2).toBe(2);
     try expect("Hello, World!").not.toBeEqualString("Hello, world!");
 }
