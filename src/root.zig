@@ -1,7 +1,7 @@
 const std = @import("std");
 const builtin = @import("builtin");
 const io = std.io;
-const PatianceDiff = @import("PatianceDiff.zig");
+const PatienceDiff = @import("PatienceDiff.zig");
 
 inline fn getContext() std.debug.ThreadContext {
     var context: std.debug.ThreadContext = undefined;
@@ -131,9 +131,7 @@ fn Matchers(comptime T: type) type {
             //     else => value,
             // };
         }
-        pub fn toBeEqualString(self: Self, actual: T) !void {
-            const testing_allocator = std.testing.allocator;
-
+        pub fn toBeEqualString(self: Self, allocator: std.mem.Allocator, actual: T) !void {
             const is_equal = std.mem.eql(u8, self.expected, actual);
 
             if (self.is_not) {
@@ -142,8 +140,8 @@ fn Matchers(comptime T: type) type {
                 };
             } else {
                 std.testing.expect(is_equal) catch |err| {
-                    var res = try PatianceDiff.diff(
-                        testing_allocator,
+                    var res = try PatienceDiff.diff(
+                        allocator,
                         self.expected,
                         actual,
                     );
@@ -174,4 +172,63 @@ pub inline fn expect(expected: anytype) Matchers(@TypeOf(expected)) {
 test "basic add functionality" {
     try expect(2).toBe(2);
     try expect("Hello, World!").not.toBeEqualString("Hello, world!");
+}
+fn satisfies(comptime Expected: type, comptime Actual: type) !void {
+    comptime {
+        const expected_info = @typeInfo(Expected);
+        _ = expected_info; // autofix
+        const actual_info = @typeInfo(Actual);
+        const actual_struct = actual_info.@"struct";
+        const actual_fields = actual_struct.fields;
+        const actual_decls = actual_struct.decls;
+        var kv: [actual_fields.len + actual_decls.len]struct { []const u8, []const u8 } = undefined;
+        var i: usize = 0;
+        for (actual_fields) |field| {
+            kv[i] = .{ "field: " ++ field.name, @typeName(field.type) };
+            i += 1;
+        }
+
+        for (actual_decls) |decl| {
+            const Decl = @TypeOf(@field(Actual, decl.name));
+            kv[i] = .{ "decl: " ++ decl.name, @typeName(Decl) };
+            i += 1;
+        }
+        const map = std.StaticStringMap([]const u8).initComptime(kv);
+
+        const expected_struct = @typeInfo(Expected).@"struct";
+        const expected_fields = expected_struct.fields;
+        const expected_decls = expected_struct.decls;
+        for (expected_fields) |field| {
+            const key = "field: " ++ field.name;
+            if (map.get(key)) |expected_field_signature| {
+                const actual_field_signature = @typeName(field.type);
+                try std.testing.expectEqualStrings(expected_field_signature, actual_field_signature);
+            } else {
+                @compileError("Expected field " ++ key ++ " not found in actual");
+            }
+        }
+
+        for (expected_decls) |decl| {
+            const key = "decl: " ++ decl.name;
+            if (map.get(key)) |expected_decl_signature| {
+                const actual_decl_signature = @typeName(@field(Actual, decl.name));
+                try std.testing.expectEqualStrings(expected_decl_signature, actual_decl_signature);
+            } else {
+                @compileError("Expected decl " ++ key ++ " not found in actual");
+            }
+        }
+    }
+}
+test "satisfies" {
+    try satisfies(struct {
+        a: i64,
+        pub fn foo(b: usize) void {
+            _ = b; // autofix
+        }
+    }, struct {
+        a: i32,
+        pub fn foo(b: usize) void {
+            _ = b; // autofix
+        }
+    });
 }
